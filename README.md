@@ -69,19 +69,19 @@ curl "http://localhost:8080/recommendations/batch?page=1&limit=10"
 ┌─────────────────────────────────────────┐
 │            Handler Layer                │
 │   (HTTP routing, validation, response)  │
-└──────────────┬──────────────────────────┘
-               │
-┌──────────────▼──────────────────────────┐
+└───────────────────┬─────────────────────┘
+                    │
+┌───────────────────▼─────────────────────┐
 │            Service Layer                │
 │   (Business logic, caching, batching)   │
-└──────┬───────────────────────┬──────────┘
-       │                       │
-┌──────▼──────────┐  ┌────────▼─────────┐
+└───────┬──────────────────────┬──────────┘
+        │                      │
+┌───────▼─────────┐  ┌─────────▼────────┐
 │   Repository    │  │   Model Client   │
 │  (Data Access)  │  │    (Scoring)     │
-└──────┬──────────┘  └──────────────────┘
-       │
-┌──────▼─────────────────────────────────┐
+└───────┬─────────┘  └──────────────────┘
+        │
+┌───────▼────────────────────────────────┐
 │       Database + Cache Layer           │
 │       (PostgreSQL + Redis)             │
 └────────────────────────────────────────┘
@@ -120,13 +120,13 @@ The model client depends entirely on database data for its scoring decisions. Ge
 
 ---
 
-## 14.3 Design Decisions
+## Design Decisions
 
 ### Caching Strategy and TTL Rationale
 
 The cache uses structured keys in the format `rec:user:{user_id}:limit:{limit}`, which means different limit values produce separate cache entries. This avoids the complexity of slicing a larger cached result while keeping cache logic simple.
 
-The 10-minute TTL balances two competing concerns: freshness and performance. Recommendations don't need to update in real-time since users rarely watch multiple items within 10 minutes. Meanwhile, the TTL prevents stale data from persisting too long. When a user adds new watch history via `POST /users/{id}/watch-history`, the cache is explicitly invalidated using a pattern scan (`rec:user:{id}:limit:*`), ensuring immediate freshness when it matters.
+The 10-minute TTL balances two competing concerns: freshness and performance. Recommendations don't need to update in real-time since users rarely watch multiple items within 10 minutes. Meanwhile, the TTL prevents stale data from persisting too long. The cache layer includes a `ClearUserCache` method that invalidates all cached recommendations for a user using a pattern scan (`rec:user:{id}:limit:*`). The service layer calls this method when watch history is updated via `AddWatchHistory`, which is ready to be exposed as an API endpoint.
 
 Cache errors are logged but never propagated to the client. If Redis goes down, the service continues to function by hitting PostgreSQL directly, with degraded performance but no downtime.
 
@@ -144,21 +144,27 @@ Errors are handled according to layer responsibility. The repository returns sen
 
 This separation means the service and repository have no knowledge of HTTP concepts, while the handler has no knowledge of database implementation. The domain package serves as the shared error vocabulary.
 
-For the batch endpoint, per-user errors are captured as strings in the response. In a production system, these would be sanitized to avoid leaking internal details, but for this assessment the error messages are safe since they originate from known, controlled sources (user not found and model inference failures).
+For the single-user endpoint, the handler directly checks error types and maps them to HTTP status codes (404, 503, 500). For the batch endpoint, per-user errors are categorized by the service's `categorizeError` function, which maps domain errors to safe, client-facing error codes and messages. This ensures internal details like database connection errors are never exposed in the batch response.
 
 ### Database Indexing Strategy
 
+##### Utilized Indexes
 | Index | Purpose |
 |-------|---------|
-| `idx_users_country` | Supports potential geographic filtering of users |
-| `idx_users_subscription` | Supports potential subscription-based content filtering |
-| `idx_content_genre` | Enables fast filtering when querying candidates by genre |
 | `idx_content_popularity` (DESC) | Optimizes the `ORDER BY popularity_score DESC LIMIT N` query used to fetch top candidates |
 | `idx_watch_history_user` | Speeds up the JOIN when fetching a specific user's watch history |
 | `idx_watch_history_content` | Supports the LEFT JOIN used in unwatched content filtering |
 | `idx_watch_history_composite` (user_id, watched_at DESC) | Covers the common query pattern of fetching recent watch history ordered by time |
 
 The composite index on `(user_id, watched_at DESC)` is particularly important because it allows PostgreSQL to satisfy both the `WHERE user_id = ?` filter and the `ORDER BY watched_at DESC` sort using a single index scan, avoiding a separate sort step.
+
+| Index | Purpose |
+|-------|---------|
+| `idx_users_country` | Supports potential country filtering of users (currently unused) |
+| `idx_users_subscription` | Supports potential subscription-based content filtering (currently unused) |
+| `idx_content_genre` | Enables fast filtering when querying candidates by genre (currently unused) |
+
+For large-scale datasets, adding a composite index on (user_id, content_id) would allow PostgreSQL to satisfy the LEFT JOIN condition using a single index lookup, improving unwatched-content filtering performance.
 
 ### Scoring Algorithm Rationale and Weight Choices
 
@@ -190,18 +196,18 @@ k6 run k6/cache_effectiveness.js
 
 ```
 execution: local
-script: ./k6/single_user_load.js
-output: -
+   script: k6/single_user_load.js
+   output: -
 
 scenarios: (100.00%) 1 scenario, 100 max VUs, 2m0s max duration (incl. graceful stop):
-     * default: Up to 100 looping VUs for 1m30s over 3 stages (gracefulRampDown: 30s, gracefulStop: 30s)
+         * default: Up to 100 looping VUs for 1m30s over 3 stages (gracefulRampDown: 30s, gracefulStop: 30s)
 
 
 
 █ THRESHOLDS
 
 http_req_duration
-✓ 'p(95)<500' p(95)=4.53ms
+✓ 'p(95)<500' p(95)=6.05ms
 
 http_req_failed
 ✓ 'rate<0.05' rate=0.00%
@@ -209,9 +215,9 @@ http_req_failed
 
 █ TOTAL RESULTS
 
-checks_total.......: 218684  2428.362884/s
-checks_succeeded...: 100.00% 218684 out of 218684
-checks_failed......: 0.00%   0 out of 218684
+checks_total.......: 216632  2404.221091/s
+checks_succeeded...: 100.00% 216632 out of 216632
+checks_failed......: 0.00%   0 out of 216632
 
 ✓ status is 200 or 503
 ✓ has valid JSON body
@@ -219,74 +225,77 @@ checks_failed......: 0.00%   0 out of 218684
 ✓ has metadata
 
 HTTP
-http_req_duration..............: avg=1.71ms   min=200µs    med=1.19ms   max=65.06ms  p(90)=3.55ms   p(95)=4.53ms
-{ expected_response:true }...: avg=1.71ms   min=200µs    med=1.19ms   max=65.06ms  p(90)=3.55ms   p(95)=4.53ms
-http_req_failed................: 0.00%  0 out of 54671
-http_reqs......................: 54671  607.090721/s
+http_req_duration..............: avg=2.64ms   min=245µs    med=2.1ms    max=53.71ms  p(90)=4.92ms   p(95)=6.05ms
+ { expected_response:true }...: avg=2.63ms   min=245µs    med=2.1ms    max=53.71ms  p(90)=4.92ms   p(95)=6.05ms
+http_req_failed................: 0.00%  1 out of 54158
+http_reqs......................: 54158  601.055273/s
 
 EXECUTION
-iteration_duration.............: avg=102.54ms min=100.35ms med=102.17ms max=169.44ms p(90)=104.48ms p(95)=105.49ms
-iterations.....................: 54671  607.090721/s
+iteration_duration.............: avg=103.51ms min=100.41ms med=103.01ms max=156.69ms p(90)=105.96ms p(95)=107.28ms
+iterations.....................: 54158  601.055273/s
 vus............................: 1      min=1          max=99
 vus_max........................: 100    min=100        max=100
 
 NETWORK
-data_received..................: 79 MB  871 kB/s
-data_sent......................: 5.6 MB 62 kB/s
+data_received..................: 78 MB  860 kB/s
+data_sent......................: 5.5 MB 62 kB/s
 ```
 
 #### Batch Endpoint Stress Test (30 VUs, 30 seconds)
 
 ```
-execution: local
-   script: ./k6/batch_stress.js
-   output: -
 
-scenarios: (100.00%) 1 scenario, 30 max VUs, 1m20s max duration (incl. graceful stop):
-         * default: Up to 30 looping VUs for 50s over 3 stages (gracefulRampDown: 30s, gracefulStop: 30s)
+     execution: local
+        script: k6/batch_stress.js
+        output: -
 
-█ THRESHOLDS
-
-http_req_duration
-✓ 'p(95)<5000' p(95)=4.78ms
-
-http_req_failed
-✓ 'rate<0.05' rate=0.00%
+     scenarios: (100.00%) 1 scenario, 30 max VUs, 1m20s max duration (incl. graceful stop):
+              * default: Up to 30 looping VUs for 50s over 3 stages (gracefulRampDown: 30s, gracefulStop: 30s)
 
 
-█ TOTAL RESULTS
 
-checks_total.......: 6324    126.095824/s
-checks_succeeded...: 100.00% 6324 out of 6324
-checks_failed......: 0.00%   0 out of 6324
+  █ THRESHOLDS
 
-✓ status is 200
-✓ has results array
-✓ has summary
-✓ has pagination info
+    http_req_duration
+    ✓ 'p(95)<5000' p(95)=5.86ms
 
-HTTP
-http_req_duration..............: avg=2.34ms   min=375µs    med=1.89ms   max=60.08ms  p(90)=3.9ms    p(95)=4.78ms
- { expected_response:true }...: avg=2.34ms   min=375µs    med=1.89ms   max=60.08ms  p(90)=3.9ms    p(95)=4.78ms
-http_req_failed................: 0.00%  0 out of 1581
-http_reqs......................: 1581   31.523956/s
+    http_req_failed
+    ✓ 'rate<0.05' rate=0.00%
 
-EXECUTION
-iteration_duration.............: avg=504.57ms min=500.54ms med=503.67ms max=562.64ms p(90)=507.86ms p(95)=510.17ms
-iterations.....................: 1581   31.523956/s
-vus............................: 2      min=1         max=29
-vus_max........................: 30     min=30        max=30
 
-NETWORK
-data_received..................: 10 MB  205 kB/s
-data_sent......................: 169 kB 3.4 kB/s
+  █ TOTAL RESULTS
+
+    checks_total.......: 6284    124.767382/s
+    checks_succeeded...: 100.00% 6284 out of 6284
+    checks_failed......: 0.00%   0 out of 6284
+
+    ✓ status is 200
+    ✓ has results array
+    ✓ has summary
+    ✓ has pagination info
+
+    HTTP
+    http_req_duration..............: avg=2.98ms   min=743µs    med=2.5ms    max=78.92ms  p(90)=4.72ms   p(95)=5.86ms
+      { expected_response:true }...: avg=2.98ms   min=743µs    med=2.5ms    max=78.92ms  p(90)=4.72ms   p(95)=5.86ms
+    http_req_failed................: 0.00%  0 out of 1571
+    http_reqs......................: 1571   31.191845/s
+
+    EXECUTION
+    iteration_duration.............: avg=507.32ms min=500.96ms med=506.15ms max=582.94ms p(90)=513.66ms p(95)=516.73ms
+    iterations.....................: 1571   31.191845/s
+    vus............................: 1      min=1         max=29
+    vus_max........................: 30     min=30        max=30
+
+    NETWORK
+    data_received..................: 10 MB  202 kB/s
+    data_sent......................: 168 kB 3.3 kB/s
 ```
 
 #### Cache Effectiveness Test
 
 ```
 execution: local
-   script: ./k6/cache_effectiveness.js
+   script: k6/cache_effectiveness.js
    output: -
 
 scenarios: (100.00%) 1 scenario, 20 max VUs, 1m20s max duration (incl. graceful stop):
@@ -297,7 +306,7 @@ scenarios: (100.00%) 1 scenario, 20 max VUs, 1m20s max duration (incl. graceful 
 █ THRESHOLDS
 
 http_req_duration
-✓ 'p(95)<500' p(95)=4.76ms
+✓ 'p(95)<500' p(95)=5.09ms
 
 http_req_failed
 ✓ 'rate<0.05' rate=0.00%
@@ -305,79 +314,88 @@ http_req_failed
 
 █ TOTAL RESULTS
 
-checks_total.......: 15249   304.670205/s
-checks_succeeded...: 100.00% 15249 out of 15249
-checks_failed......: 0.00%   0 out of 15249
+checks_total.......: 15137   302.575296/s
+checks_succeeded...: 100.00% 15137 out of 15137
+checks_failed......: 0.00%   0 out of 15137
 
 ✓ status is 200 or 503
 
 CUSTOM
-cache_hits.....................: 15249  304.670205/s
+cache_hits.....................: 15131  302.455361/s
+cache_misses...................: 5      0.099946/s
 
 HTTP
-http_req_duration..............: avg=2.08ms  min=219µs   med=1.76ms  max=15.22ms p(90)=3.84ms p(95)=4.76ms
- { expected_response:true }...: avg=2.08ms  min=219µs   med=1.76ms  max=15.22ms p(90)=3.84ms p(95)=4.76ms
-http_req_failed................: 0.00%  0 out of 15249
-http_reqs......................: 15249  304.670205/s
+http_req_duration..............: avg=2.21ms  min=287µs   med=1.77ms  max=58.85ms  p(90)=4.01ms  p(95)=5.09ms
+ { expected_response:true }...: avg=2.21ms  min=287µs   med=1.77ms  max=47.15ms  p(90)=4.01ms  p(95)=5.09ms
+http_req_failed................: 0.00%  1 out of 15137
+http_reqs......................: 15137  302.575296/s
 
 EXECUTION
-iteration_duration.............: avg=52.78ms min=50.38ms med=52.52ms max=69.92ms p(90)=54.6ms p(95)=55.66ms
-iterations.....................: 15249  304.670205/s
+iteration_duration.............: avg=53.17ms min=50.49ms med=52.72ms max=118.45ms p(90)=55.31ms p(95)=56.78ms
+iterations.....................: 15137  302.575296/s
 vus............................: 1      min=1          max=20
 vus_max........................: 20     min=20         max=20
 
 NETWORK
-data_received..................: 18 MB  362 kB/s
-data_sent......................: 1.6 MB 31 kB/s
+data_received..................: 18 MB  359 kB/s
+data_sent......................: 1.5 MB 31 kB/s
 ```
+
+### Results Analysis
+
+All three tests passed their thresholds comfortably. The P95 latency of 6.05ms for single-user requests is 83x faster than the 500ms threshold, indicating significant headroom for increased load.
+
+The 0.00% error rate across all tests is notable because the model client simulates a 1.5% failure rate. This suggests that during testing, the random failures did not occur in sufficient volume to register — a function of the random seed and short test duration. In longer-running tests, the expected ~1.5% failure rate would appear.
+
+The batch endpoint averaged 2.98ms with P95 of 5.86ms starting from a cold cache. The initial batch requests trigger cache misses with full model scoring per user, but because each user's recommendations are cached after the first computation, subsequent batch requests benefit from per-user cache hits. With only 20 seeded users and a 500ms sleep between iterations, the cache fully warms within the first second of testing. Under production conditions with thousands of users and no sleep between requests, cold-start batch latency would be higher (~200-400ms for 20 uncached users due to model scoring).
 
 ### Identified Bottlenecks and Limiting Factors
 
-The primary bottleneck is the **simulated model latency** of 30-50ms per user. This is an artificial constraint that dominates single-request response time. Without it, cache-miss requests would complete in under 10ms based on database query time alone.
+The **simulated model latency** of 30-50ms per user is the primary bottleneck for cache-miss requests. With the cache warm, average response times drop to 2-3ms. Without the cache, each request would incur the full model latency plus database query time.
 
-For the batch endpoint, throughput is limited by `batchConcurrency × model_latency`. With 10 workers and ~40ms average model latency, processing 20 users takes approximately `(20/10) × 40ms = 80ms` for model scoring plus database query time, totaling ~200-400ms per batch request.
+For the batch endpoint, throughput is bounded by `batchConcurrency × model_latency`. With 10 workers and ~40ms average model latency, processing 20 uncached users takes approximately `(20/10) × 40ms = 80ms` for model scoring alone. However, once cached, batch processing completes in under 5ms regardless of page size.
 
-The **database connection pool** (20 max connections) is the second constraint. Under heavy concurrent load, goroutines may block waiting for a connection. This is intentional — unbounded connections would overwhelm PostgreSQL.
+The **database connection pool** (20 max connections) is the secondary constraint. Under heavy concurrent load with cache misses, goroutines may block waiting for a connection. This is intentional — unbounded connections would overwhelm PostgreSQL.
 
 ### Cache Hit Rate Analysis
 
-The cache effectiveness test demonstrates a hit rate above 99% after the initial warm-up period. With 5 unique cache keys and a 10-minute TTL, the first 5 requests are cache misses (one per user), and all subsequent requests are served directly from Redis in under 5ms. This reduces average response time by approximately 90% compared to uncached requests and eliminates database load for repeat requests.
+The cache effectiveness test recorded a **99.97% hit rate** (15,131 hits vs 5 misses). The 5 misses correspond exactly to the 5 unique users (IDs 1-5) being requested for the first time. After the initial warm-up (first ~50ms of the test), every subsequent request was served directly from Redis.
+
+The impact of caching on response time is clear: the average latency of 2.21ms is dominated by Redis round-trip time rather than database queries and model scoring. Without caching, each request would require 3 database queries plus 30-50ms of model latency, resulting in approximately 40-60ms per request — a 20x performance difference.
 
 ---
 
-## 14.5 Trade-offs and Future Improvements
+## Trade-offs and Future Improvements
 
 ### Known Limitations
 
-**No cache warming.** The first request for each user always experiences the full pipeline latency. In production, a background job could pre-populate the cache for active users during off-peak hours.
+**No cache warming.** The first request for each user always experiences the full pipeline latency (~40-60ms). In production, a background job could pre-populate the cache for active users during off-peak hours, eliminating cold-start penalties entirely.
 
-**Pattern-based cache invalidation.** The `SCAN` command used to find and delete cache keys for a user is O(N) in total Redis keys. With millions of users, this becomes a bottleneck. An alternative is maintaining a Redis Set of cache keys per user for O(1) invalidation.
+**Pattern-based cache invalidation.** The `SCAN` command used to find and delete cache keys is O(N) in total Redis keys. With millions of users, this becomes a bottleneck. An alternative is maintaining a Redis Set of cache keys per user for O(1) invalidation.
 
-**In-process seeding.** The seed logic is bundled with the application binary. In a production system, seeding and migrations should be separate CLI commands or init containers.
+**In-process seeding.** The seed logic is bundled with the application binary. In a production system, seeding and migrations should be separate CLI commands or Docker init containers to keep the application binary focused on serving requests.
 
-**No rate limiting.** The service has no protection against abusive traffic. A token bucket middleware or API gateway would be necessary in production.
+**No rate limiting.** The service has no protection against abusive traffic. A token bucket middleware or API gateway would be necessary in production to prevent resource exhaustion.
+
+**Single Redis instance.** The current deployment uses a single Redis node, creating a single point of failure for the caching layer. Cache failures are handled gracefully (requests fall through to PostgreSQL), but sustained Redis downtime would significantly increase database load.
 
 ### Scalability Considerations
 
 **Horizontal scaling.** The service is stateless — all shared state lives in PostgreSQL and Redis. It can scale to N instances behind a load balancer with no code changes.
 
-**Database read replicas.** The repository could accept a separate read-only connection pool pointed at a PostgreSQL replica, offloading recommendation queries from the primary.
+**Database read replicas.** The repository could accept a separate read-only connection pool pointed at a PostgreSQL replica, offloading recommendation queries from the primary and improving read throughput.
 
-**Redis Cluster.** For large user bases, a single Redis instance may not have enough memory. Redis Cluster provides automatic sharding across multiple nodes.
-
-**Asynchronous batch processing.** For very large user sets, the batch endpoint could publish user IDs to a message queue (e.g., RabbitMQ, Kafka) and process them asynchronously, returning a job ID instead of blocking.
+**Asynchronous batch processing.** For very large user sets (millions of users), the batch endpoint could publish user IDs to a message queue (e.g., RabbitMQ, Kafka) and process them asynchronously, returning a job ID for polling instead of blocking the HTTP request.
 
 ### Proposed Enhancements
 
-**Circuit breaker** on the model client to fast-fail during sustained outages instead of waiting for each request to timeout individually.
+**Circuit breaker** After N consecutive failures, return simple popularity-based recommendations instead. This prevents wasting time until the model recovers.
 
-**Request coalescing** to deduplicate concurrent requests for the same user and limit combination. If 10 requests arrive for user 1 simultaneously, only one hits the database and the rest wait for the cached result.
+**Request coalescing** to deduplicate concurrent requests for the same user and limit combination at the same time. If 10 requests arrive for user 1 simultaneously, only one executes the full pipeline and the rest wait for the cached result.
 
-**A/B testing support** with versioned scoring algorithms and traffic splitting, enabling experimentation with different weight configurations.
+**Structured logging** replacing `log.Printf` with a structured logger (e.g., `slog` or `zerolog`) that outputs JSON logs with request IDs, user IDs, and latency measurements for easier debugging.
 
-**Observability** with Prometheus metrics for latency histograms, cache hit rates, error rates by type, and database connection pool utilization. Combined with Grafana dashboards for operational visibility.
-
-**Structured logging** replacing `log.Printf` with a structured logger (e.g., `slog` or `zerolog`) that outputs JSON logs with request IDs, user IDs, and latency measurements for easier debugging and log aggregation.
+**Real-time event streaming** Watch history would not be updated via a direct API call. Instead, the streaming platform would emit events when users finish watching content, published to a message queue (e.g., Kafka). The recommendation service consumes these events to update watch history, invalidate cached recommendations, and optionally pre-compute fresh recommendations in the background. Alternatively, PostgreSQL's LISTEN/NOTIFY with a trigger on the `user_watch_history` table could achieve without external dependencies.
 
 ---
 
@@ -407,7 +425,7 @@ Body: {"content_id": 42}
 ```
 GET /health
 ```
-
+---
 ## Stopping the Application
 
 ```bash

@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS user_watch_history;
+DROP TABLE IF EXISTS content;
+DROP TABLE IF EXISTS users;

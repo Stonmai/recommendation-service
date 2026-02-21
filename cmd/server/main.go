@@ -11,6 +11,7 @@ import (
 	"github.com/actuallystonmai/recommendation-service/internal/config"
 	"github.com/actuallystonmai/recommendation-service/seeds"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 )
 
 func main() {
@@ -22,7 +23,7 @@ func main() {
 	
 	ctx := context.Background()
 	
-	// ------------ PostgreSQL ---------------
+	// ------------ Setup Postgres ---------------
 	poolConfig, err := pgxpool.ParseConfig(cfg.DatabaseURL)
 	if err != nil {
 		log.Fatalf("failed to parse database config %v", err)
@@ -35,11 +36,11 @@ func main() {
 	defer pool.Close()
 
 	if err := waitForDB(ctx, pool); err != nil {
-		log.Fatalf("database not ready: %v", err)
+		log.Fatalf("fail to connect to database: %v", err)
 	}
 	log.Println("connected to PostgreSQL")
 	
-	// ------------ Run Migrations ---------------
+	// Run migrations
 	// for migrate-down using CLI command
 	if len(os.Args) > 1 && os.Args[1] == "migrate-down" {
 		if err := migrateDown(ctx, pool); err != nil {
@@ -58,8 +59,20 @@ func main() {
 		log.Fatalf("failed to check seed %v", err)
 	}
 	
+	// ------------ Setup Redis -------------------
+	redisOpts, err := redis.ParseURL(cfg.RedisURL)
+	if err != nil {
+		log.Fatalf("failed to parse redis URL: %v", err)
+	}
+	redisClient := redis.NewClient(redisOpts)
+	defer redisClient.Close()
 	
-	// ---------------- Server --------------------	
+	if err := waitForRedis(ctx, redisClient); err != nil {
+		log.Fatalf("fail to connect to redis: %v", err)
+	}
+	log.Println("connected to redis")
+	
+	// -------------- Setup Server -------------------
 	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte("OK"))
 	})
@@ -101,6 +114,17 @@ func migrateUp(ctx context.Context, pool *pgxpool.Pool) error {
 	}
 	log.Println("migrations applied successfully")
 	return nil
+}
+
+func waitForRedis(ctx context.Context, client *redis.Client) error {
+	for i := range 30 {
+		if err := client.Ping(ctx).Err(); err == nil {
+			return nil
+		}
+		log.Printf("waiting for redis... (%d/30)", i+1)
+		time.Sleep(1 * time.Second)
+	}
+	return fmt.Errorf("redis connection timeout after 30s")
 }
 
 func checkSeed(ctx context.Context, pool *pgxpool.Pool) error {

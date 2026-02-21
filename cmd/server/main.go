@@ -6,9 +6,17 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
+	"github.com/actuallystonmai/recommendation-service/internal/cache"
 	"github.com/actuallystonmai/recommendation-service/internal/config"
+	"github.com/actuallystonmai/recommendation-service/internal/handler"
+	"github.com/actuallystonmai/recommendation-service/internal/model"
+	"github.com/actuallystonmai/recommendation-service/internal/repository"
+	"github.com/actuallystonmai/recommendation-service/internal/router"
+	"github.com/actuallystonmai/recommendation-service/internal/service"
 	"github.com/actuallystonmai/recommendation-service/seeds"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
@@ -20,9 +28,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to load config %v", err)
 	}
-	
+
 	ctx := context.Background()
-	
+
 	// ------------ Setup Postgres ---------------
 	poolConfig, err := pgxpool.ParseConfig(cfg.DatabaseURL)
 	if err != nil {
@@ -39,7 +47,7 @@ func main() {
 		log.Fatalf("fail to connect to database: %v", err)
 	}
 	log.Println("connected to PostgreSQL")
-	
+
 	// Run migrations
 	// for migrate-down using CLI command
 	if len(os.Args) > 1 && os.Args[1] == "migrate-down" {
@@ -53,12 +61,12 @@ func main() {
 	if err := migrateUp(ctx, pool); err != nil {
 		log.Fatalf("failed to migrate up %v", err)
 	}
-	
+
 	// ------------ Setup Seed Data ---------------
 	if err := checkSeed(ctx, pool); err != nil {
 		log.Fatalf("failed to check seed %v", err)
 	}
-	
+
 	// ------------ Setup Redis -------------------
 	redisOpts, err := redis.ParseURL(cfg.RedisURL)
 	if err != nil {
@@ -66,19 +74,45 @@ func main() {
 	}
 	redisClient := redis.NewClient(redisOpts)
 	defer redisClient.Close()
-	
+
 	if err := waitForRedis(ctx, redisClient); err != nil {
 		log.Fatalf("fail to connect to redis: %v", err)
 	}
 	log.Println("connected to redis")
-	
-	// -------------- Setup Server -------------------
-	http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("OK"))
-	})
 
-	log.Println("Server running on :8080")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	// -------------- Setup Server -------------------
+	repo := repository.NewRepository(pool)
+	cacheLayer := cache.NewCache(redisClient, cfg.CacheTTL)
+	modelClient := model.NewClient()
+	service := service.NewService(repo, cacheLayer, modelClient)
+	handler := handler.NewHandler(service)
+
+	r := router.Setup(handler)
+	
+	srv := &http.Server{
+		Addr:         cfg.Addr(),
+		Handler:      r,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	// shutdown
+	go func() {
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+		<-sigCh
+		log.Println("shutting down server...")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		srv.Shutdown(shutdownCtx)
+	}()
+
+	log.Printf("server starting on %s", cfg.Addr())
+	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
+		log.Fatalf("server error: %v", err)
+	}
+	log.Println("server stopped")
 }
 
 func waitForDB(ctx context.Context, pool *pgxpool.Pool) error {

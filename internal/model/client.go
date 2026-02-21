@@ -45,10 +45,10 @@ func (c *Client) Score(input ScoreInput) ([]domain.ScoredRecommendation, error) 
 		return nil, &ModelInferenceError{Msg: "model inference failed"}
 	}
 
-	// Step 1: calculate preference
+	// Calculate preference
 	genrePreferences := calculateGenrePreferenceWeights(input.WatchHistory)
 
-	// Step 2: Score each candidate
+	// Score each candidate
 	now := time.Now()
 	scored := make([]domain.ScoredRecommendation, 0, len(input.Candidates))
 
@@ -63,12 +63,12 @@ func (c *Client) Score(input ScoreInput) ([]domain.ScoredRecommendation, error) 
 		})
 	}
 
-	// Step 3: Sort by score descending
+	// Sort by score descending
 	sort.Slice(scored, func(i, j int) bool {
 		return scored[i].Score > scored[j].Score
 	})
 
-	// Step 4: Take top N
+	// Take top N
 	if len(scored) > input.Limit {
 		scored = scored[:input.Limit]
 	}

@@ -12,17 +12,20 @@ import (
 // Get single user
 func (r *Repository) GetUserByID(ctx context.Context, userID int64) (*domain.User, error) {
 	user := &domain.User{}
-	err := r.pool.QueryRow(ctx, 
+
+	err := r.pool.QueryRow(ctx,
 		`SELECT id, age, country, subscription_type, created_at
-		FROM users WHERE id = $1`, userID,
+		 FROM users WHERE id = $1`,
+		userID,
 	).Scan(&user.ID, &user.Age, &user.Country, &user.SubscriptionType, &user.CreatedAt)
-	
+
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, nil
+			return nil, domain.ErrUserNotFound
 		}
-		return nil, fmt.Errorf("failed to query user by id %d: %w", userID, err)
+		return nil, fmt.Errorf("query user id=%d: %w", userID, err)
 	}
+
 	return user, nil
 }
 
@@ -33,7 +36,7 @@ func (r *Repository) GetUserIDsPaginated(ctx context.Context, page, limit int) (
 		`SELECT id FROM users ORDER BY id LIMIT $1 OFFSET $2`, limit, offset,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query user ids for page %d: %w", page, err)
+		return nil, fmt.Errorf("query user ids for page %d: %w", page, err)
 	}
 	defer rows.Close()
 
@@ -41,13 +44,13 @@ func (r *Repository) GetUserIDsPaginated(ctx context.Context, page, limit int) (
 	for rows.Next() {
 		var id int64
 		if err := rows.Scan(&id); err != nil {
-			return nil, fmt.Errorf("failed to scan user id: %w", err)
+			return nil, fmt.Errorf("scan user id: %w", err)
 		}
 		ids = append(ids, id)
 	}
 	
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("failed to iterate user ids: %w", err)
+		return nil, fmt.Errorf("iterate user ids: %w", err)
 	}
 	return ids, nil
 }
@@ -60,7 +63,7 @@ func (r *Repository) CountUsers(ctx context.Context) (int, error) {
 	).Scan(&total)
 
 	if err != nil {
-		return 0, fmt.Errorf("failed to count users: %w", err)
+		return 0, fmt.Errorf("count users: %w", err)
 	}
 	return total, nil
 }

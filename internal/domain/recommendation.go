@@ -1,5 +1,16 @@
 package domain
 
+import "errors"
+
+type BatchStatus string
+
+const (
+	StatusSuccess BatchStatus = "success"
+	StatusFailed  BatchStatus = "failed"
+)
+
+var ErrUserNotFound = errors.New("user not found")
+
 type ScoredRecommendation struct {
 	ContentID       int64   `json:"content_id"`
 	Title           string  `json:"title"`
@@ -22,7 +33,7 @@ type RecommendationResult struct {
 type BatchUserResult struct {
 	UserID          int64                  `json:"user_id"`
 	Recommendations []ScoredRecommendation `json:"recommendations,omitempty"`
-	Status          string                 `json:"status"`
+	Status          BatchStatus            `json:"status"`
 	Error           string                 `json:"error,omitempty"`
 	Message         string                 `json:"message,omitempty"`
 }
@@ -35,4 +46,13 @@ type BatchSummary struct {
 
 type BatchMeta struct {
 	GeneratedAt string `json:"generated_at"`
+}
+
+type BatchResponse struct {
+	Page       int               `json:"page"`
+	Limit      int               `json:"limit"`
+	TotalUsers int               `json:"total_users"`
+	Results    []BatchUserResult `json:"results"`
+	Summary    BatchSummary      `json:"summary"`
+	Metadata   BatchMeta         `json:"metadata"`
 }

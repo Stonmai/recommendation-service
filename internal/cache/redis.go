@@ -10,14 +10,16 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-const defaultTTL = 10 * time.Minute
-
 type Cache struct {
 	client *redis.Client
+	ttl time.Duration
 }
 
-func NewCache(client *redis.Client) *Cache {
-	return &Cache{client: client}
+func NewCache(client *redis.Client, ttl time.Duration) *Cache {
+	return &Cache{
+		client: client,
+		ttl:    ttl,
+	}
 }
 
 func buildKey(userID int64, limit int) string {
@@ -25,23 +27,23 @@ func buildKey(userID int64, limit int) string {
 }
 
 // Get recommendations from cache
-func (c *Cache) Get(ctx context.Context, userID int64, limit int) ([]domain.ScoredRecommendation, error) {
+func (c *Cache) Get(ctx context.Context, userID int64, limit int) ([]domain.ScoredRecommendation, bool, error) {
 	key := buildKey(userID, limit)
 	val, err := c.client.Get(ctx, key).Result()
 	if err == redis.Nil {
-		return nil, nil
+		return nil, false, nil
 	}
 	
 	if err != nil {
-		return nil, fmt.Errorf("failed to get recommendations from cache: %w", err)
+		return nil, false, fmt.Errorf("failed to get recommendations from cache: %w", err)
 	}
 	
 	var recs []domain.ScoredRecommendation
 	if err := json.Unmarshal([]byte(val), &recs); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal recommendations %s: %w", key, err)
+		return nil, false, fmt.Errorf("cache unmarshal %s: %w", key, err)
 	}
 	
-	return recs, nil
+	return recs, true, nil
 }
 
 // Store recommendations in cache
@@ -52,7 +54,7 @@ func (c *Cache) Set(ctx context.Context, userID int64, limit int, recs []domain.
 		return fmt.Errorf("failed to marshal recommendations: %w", err)
 	}
 	
-	if err := c.client.Set(ctx, key, val, defaultTTL).Err(); err != nil {
+	if err := c.client.Set(ctx, key, val, c.ttl).Err(); err != nil {
 		return fmt.Errorf("failed to set recommendations in cache: %w", err)
 	}
 	

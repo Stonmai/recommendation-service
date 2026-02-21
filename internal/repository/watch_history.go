@@ -39,3 +39,15 @@ func (r *Repository) GetUserWatchHistoryWithGenres(ctx context.Context, userID i
 	
 	return items, nil
 }
+
+func (r *Repository) AddWatchHistory(ctx context.Context, userID, contentID int64) error {
+    _, err := r.pool.Exec(ctx,
+        `INSERT INTO user_watch_history (user_id, content_id, watched_at) 
+         VALUES ($1, $2, NOW())`,
+        userID, contentID,
+    )
+    if err != nil {
+        return fmt.Errorf("insert watch history: %w", err)
+    }
+    return nil
+}

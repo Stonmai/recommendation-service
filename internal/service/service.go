@@ -147,7 +147,7 @@ func (s *Service) GetBatchRecommendations(ctx context.Context, page, limit int) 
 	}
 	wg.Wait()
 
-	// Aggregate summary
+	// summary
 	successCount := 0
 	failedCount := 0
 	for _, r := range results {
@@ -176,14 +176,17 @@ func (s *Service) GetBatchRecommendations(ctx context.Context, page, limit int) 
 	}, nil
 }
 
-// processUserForBatch generates recommendations for a single user, capturing errors.
+// Generates recommendations for a singl user, capturing errors.
 func (s *Service) processUserForBatch(ctx context.Context, userID int64) domain.BatchUserResult {
 	result, err := s.GetRecommendations(ctx, userID, batchRecLimit)
 	if err != nil {
+		log.Printf("[service] batch: failed for user %d: %v", userID, err)
+		code, msg := categorizeError(err)
 		return domain.BatchUserResult{
-			UserID: userID,
-			Status: domain.StatusFailed,
-			Error:  err.Error(),
+			UserID:  userID,
+			Status:  domain.StatusFailed,
+			Error:   code,
+			Message: msg,
 		}
 	}
 
@@ -192,4 +195,26 @@ func (s *Service) processUserForBatch(ctx context.Context, userID int64) domain.
 		Recommendations: result.Recommendations,
 		Status:          domain.StatusSuccess,
 	}
+}
+
+// Add watch history for a user and clear user's cache
+func (s *Service) AddWatchHistory(ctx context.Context, userID, contentID int64) error {
+    if err := s.repo.AddWatchHistory(ctx, userID, contentID); err != nil {
+        return err
+    }
+    if err := s.cache.ClearUserCache(ctx, userID); err != nil {
+        log.Printf("[service] cache invalidation error for user %d: %v", userID, err)
+    }
+    return nil
+}
+
+// Handle response error
+func categorizeError(err error) (string, string) {
+	if errors.Is(err, domain.ErrUserNotFound) {
+		return "user_not_found", "user not found"
+	}
+	if model.IsModelInferenceError(err) {
+		return "model_inference_error", "recommendation model failed to generate a response"
+	}
+	return "internal_error", "an unexpected error occurred"
 }

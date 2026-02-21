@@ -69,7 +69,7 @@ func main() {
 }
 
 func waitForDB(ctx context.Context, pool *pgxpool.Pool) error {
-	for i := 0; i < 30; i++ {
+	for i := range 30 {
 		if err := pool.Ping(ctx); err == nil {
 			return nil
 		}

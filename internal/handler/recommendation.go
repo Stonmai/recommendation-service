@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -8,7 +9,6 @@ import (
 	"time"
 
 	"github.com/actuallystonmai/recommendation-service/internal/domain"
-	"github.com/actuallystonmai/recommendation-service/internal/model"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -42,9 +42,15 @@ func (h *Handler) GetRecommendations(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// Model inference failure
-		if model.IsModelInferenceError(err) {
+		if errors.Is(err, domain.ErrModelUnavailable) {
 			writeError(w, http.StatusServiceUnavailable, "model_unavailable",
 				"Recommendation model is temporarily unavailable")
+			return
+		}
+		// Request timeout
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			writeError(w, http.StatusServiceUnavailable, "request_timeout",
+				"Request timed out, please try again")
 			return
 		}
 		writeError(w, http.StatusInternalServerError, "internal_error", "An unexpected error occurred")

@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"strconv"
 )
@@ -32,6 +34,11 @@ func (h *Handler) GetBatchRecommendations(w http.ResponseWriter, r *http.Request
 	// Call service
 	result, err := h.service.GetBatchRecommendations(r.Context(), page, limit)
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			writeError(w, http.StatusServiceUnavailable, "request_timeout",
+				"Request timed out, please try again")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "internal_error", "An unexpected error occurred")
 		return
 	}

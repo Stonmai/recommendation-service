@@ -140,11 +140,13 @@ Individual user failures within a batch do not halt processing. Each goroutine c
 
 ### Error Handling Philosophy
 
-Errors are handled according to layer responsibility. The repository returns sentinel errors defined in the domain package (e.g., `domain.ErrUserNotFound`), the service propagates or wraps these errors with context using `fmt.Errorf("fetch user: %w", err)`, and the handler maps them to HTTP status codes using `errors.Is()`.
+Errors are handled according to layer responsibility. The repository maps low-level errors to domain sentinels (e.g., `pgx.ErrNoRows` → `domain.ErrUserNotFound`) and wraps other errors with context using `fmt.Errorf("...: %w", err)`. The service propagates these errors up, wrapping them with additional context where useful (e.g., `"fetch watch history: %w"`). The handler maps errors to HTTP status codes using `errors.Is()` against domain sentinels.
 
-This separation means the service and repository have no knowledge of HTTP concepts, while the handler has no knowledge of database implementation. The domain package serves as the shared error vocabulary.
+This separation means the service and repository have no knowledge of HTTP concepts, while the handler has no knowledge of database or model internals. The domain package serves as the shared error words between all layers.
 
-For the single-user endpoint, the handler directly checks error types and maps them to HTTP status codes (404, 503, 500). For the batch endpoint, per-user errors are categorized by the service's `categorizeError` function, which maps domain errors to safe, client-facing error codes and messages. This ensures internal details like database connection errors are never exposed in the batch response.
+Sentinel errors defined in `domain/recommendation.go` and the service wraps model inference failures as `domain.ErrModelUnavailable` before they leave the service layer, so the handler never needs to import or inspect the `model` package directly.
+
+For the batch endpoint, per-user errors are captured by the service's `categorizeError` function, which maps domain sentinels to safe, client-facing error codes and messages in the batch response. Batch-level errors (e.g., failed pagination query, request timeout) are handled separately in the batch handler. This ensures internal details are never exposed to callers.
 
 ### Database Indexing Strategy
 

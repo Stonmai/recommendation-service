@@ -1,6 +1,7 @@
 package model
 
 import (
+	"errors"
 	"math"
 	"math/rand"
 	"sort"
@@ -31,8 +32,8 @@ type ScoreInput struct {
 }
 
 func IsModelInferenceError(err error) bool {
-	_, ok := err.(*ModelInferenceError)
-	return ok
+	var target *ModelInferenceError
+	return errors.As(err, &target)
 }
 
 func (c *Client) Score(input ScoreInput) ([]domain.ScoredRecommendation, error) {

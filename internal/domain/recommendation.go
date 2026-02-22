@@ -9,7 +9,9 @@ const (
 	StatusFailed  BatchStatus = "failed"
 )
 
-var ErrUserNotFound = errors.New("user not found")
+var ErrUserNotFound     = errors.New("user not found")
+var ErrModelUnavailable = errors.New("recommendation model unavailable")
+var ErrRequestTimeout   = errors.New("request timed out")
 
 type ScoredRecommendation struct {
 	ContentID       int64   `json:"content_id"`

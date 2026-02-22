@@ -23,13 +23,6 @@ const (
 	batchRecLimit       = 10
 )
 
-type BatchStatus string
-
-const (
-	StatusSuccess BatchStatus = "success"
-	StatusFailed  BatchStatus = "failed"
-)
-
 type Service struct {
 	repo *repository.Repository
 	cache *cache.Cache
@@ -108,7 +101,7 @@ func (s *Service) generateRecommendations(ctx context.Context, userID int64, lim
 		Limit:        limit,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("score recommendations for user %d: %w", userID, domain.ErrModelUnavailable)
 	}
 
 	return scored, nil
@@ -208,12 +201,12 @@ func (s *Service) AddWatchHistory(ctx context.Context, userID, contentID int64) 
     return nil
 }
 
-// Handle response error
+// Handle response error for batch processing
 func categorizeError(err error) (string, string) {
 	if errors.Is(err, domain.ErrUserNotFound) {
 		return "user_not_found", "user not found"
 	}
-	if model.IsModelInferenceError(err) {
+	if errors.Is(err, domain.ErrModelUnavailable) {
 		return "model_inference_error", "recommendation model failed to generate a response"
 	}
 	return "internal_error", "an unexpected error occurred"

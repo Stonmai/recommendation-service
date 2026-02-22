@@ -47,7 +47,7 @@ func seedUsers(ctx context.Context, pool *pgxpool.Pool, rng *rand.Rand, n int) e
 	subscriptionTypes := []string{"free", "basic", "premium"}
 	subscriptionWeights := []float64{0.5, 0.3, 0.2}
 
-	query := "INSERT INTO users (age, country, subscription_type, created_at) VALUES "
+	rows := []string{}
 	args := []any{}
 
 	for i := range n {
@@ -57,13 +57,16 @@ func seedUsers(ctx context.Context, pool *pgxpool.Pool, rng *rand.Rand, n int) e
 		createdAt := time.Now().AddDate(0, 0, -rng.Intn(365))
 
 		base := i * 4
-		query += fmt.Sprintf("($%d, $%d, $%d, $%d)", base+1, base+2, base+3, base+4)
-		if i < n-1 {
-			query += ", "
-		}
+		rows = append(rows, fmt.Sprintf("($%d, $%d, $%d, $%d)", base+1, base+2, base+3, base+4))
 
 		args = append(args, age, country, subscription, createdAt)
 	}
+	
+	if len(rows) == 0 {
+		return nil
+	}
+	
+	query := "INSERT INTO users (age, country, subscription_type, created_at) VALUES " + strings.Join(rows, ", ")
 
 	_, err := pool.Exec(ctx, query, args...)
 	return err

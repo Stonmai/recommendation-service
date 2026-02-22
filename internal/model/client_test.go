@@ -115,15 +115,3 @@ func TestRecencyFactor(t *testing.T) {
 	fmt.Printf("  Today: %.3f\n", recent)
 	fmt.Printf("  1 year ago: %.3f\n", old)
 }
-
-func TestModelInferenceError(t *testing.T) {
-	err := &ModelInferenceError{Msg: "model inference failed"}
-
-	if !IsModelInferenceError(err) {
-		t.Error("should detect ModelInferenceError")
-	}
-
-	if IsModelInferenceError(fmt.Errorf("random error")) {
-		t.Error("should not detect regular error as ModelInferenceError")
-	}
-}

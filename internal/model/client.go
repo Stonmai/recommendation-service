@@ -1,7 +1,6 @@
 package model
 
 import (
-	"errors"
 	"math"
 	"math/rand"
 	"sort"
@@ -29,11 +28,6 @@ type ScoreInput struct {
 	WatchHistory []domain.WatchHistoryItem
 	Candidates []domain.Content
 	Limit int
-}
-
-func IsModelInferenceError(err error) bool {
-	var target *ModelInferenceError
-	return errors.As(err, &target)
 }
 
 func (c *Client) Score(input ScoreInput) ([]domain.ScoredRecommendation, error) {

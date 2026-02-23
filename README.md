@@ -150,7 +150,7 @@ For the batch endpoint, per-user errors are captured by the service's `categoriz
 
 ### Database Indexing Strategy
 
-**##### Utilized Indexes**
+**Utilized Indexes**
 | Index | Purpose |
 |-------|---------|
 | `idx_content_popularity` (DESC) | Optimizes the `ORDER BY popularity_score DESC LIMIT N` query used to fetch top candidates |
@@ -162,7 +162,7 @@ For the batch endpoint, per-user errors are captured by the service's `categoriz
 The composite index on `(user_id, watched_at DESC)` is particularly important because it allows PostgreSQL to satisfy both the `WHERE user_id = ?` filter and the `ORDER BY watched_at DESC` sort using a single index scan, avoiding a separate sort step.
 The composite index on `(user_id, content_id)` allows PostgreSQL to evaluate the LEFT JOIN condition for unwatched content filtering without scanning the entire `user_watch_history` table, which is critical as watch history grows.
 
-**##### Preparatory Indexes**
+**Preparatory Indexes**
 | Index | Purpose |
 |-------|---------|
 | `idx_users_country` | Supports potential country filtering of users (currently unused) |
@@ -200,8 +200,8 @@ k6 run k6/cache_effectiveness.js
 | Metric         | Result    | Threshold |
 | -------------- | --------- | --------- |
 | Avg Latency    | 2.62ms    | —         |
-| P95 Latency    | 6.62ms    | < 5000ms  |
-| P99 Latency    | 11.35ms   | < 10000ms |
+| P95 Latency    | 6.62ms    | < 500ms  |
+| P99 Latency    | 11.35ms   | < 1000ms |
 | Error Rate     | 0.00%     | < 5%      |
 | Throughput     | 599 req/s | —         |
 | Total Requests | 53,979    | —         |
@@ -318,14 +318,14 @@ data_sent......................: 168 kB 3.4 kB/s
 
 #### Cache Effectiveness Test
 
-| Metric | Result |
-|--------|--------|
-| Cache Hits | 15,140 (99.96%) |
-| Cache Misses | 6 (0.04%) |
-| Avg Latency | 2.31ms |
-| P95 Latency | 4.82ms |
-| P99 Latency | 7.1ms |
-| Throughput | 302.8 req/s |
+| Metric | Result | Threshold |
+|--------|--------|-----------|
+| Cache Hits | 15,140 (99.96%) | - |
+| Cache Misses | 6 (0.04%) | - |
+| Avg Latency | 2.31ms | - |
+| P95 Latency | 4.82ms | < 500 |
+| P99 Latency | 7.1ms | < 1000 |
+| Throughput | 302.8 req/s | - |
 
 **Full k6 output**
 ```
@@ -428,7 +428,7 @@ The impact of caching on response time is clear: the average latency of 2.31ms i
 
 **Structured logging** replacing `log.Printf` with a structured logger (e.g., `slog` or `zerolog`) that outputs JSON logs with request IDs, user IDs, and latency measurements for easier debugging.
 
-**Real-time event streaming** Watch history would not be updated via a direct API call. Instead, the streaming platform would emit events when users finish watching content, published to a message queue (e.g., Kafka). The recommendation service consumes these events to update watch history, invalidate cached recommendations, and optionally pre-compute fresh recommendations in the background. Alternatively, PostgreSQL's LISTEN/NOTIFY with a trigger on the `user_watch_history` table could achieve without external dependencies.
+**Real-time event streaming** Watch history would not be updated via a direct API call. Instead, the streaming platform would emit events when users finish watching content, published to a message queue (e.g., Kafka). The recommendation service consumes these events to update watch history, invalidate cached recommendations, and optionally pre-compute fresh recommendations in the background. Alternatively, PostgreSQL's LISTEN/NOTIFY with a trigger on the `user_watch_history` table could achieve similar result without external dependencies.
 
 ---
 

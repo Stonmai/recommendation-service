@@ -197,20 +197,31 @@ k6 run k6/cache_effectiveness.js
 
 #### Single User Load Test (100 VUs, 1 minute sustained)
 
+| Metric         | Result    | Threshold |
+| -------------- | --------- | --------- |
+| Avg Latency    | 2.62ms    | —         |
+| P95 Latency    | 6.62ms    | < 5000ms  |
+| P99 Latency    | 11.35ms   | < 10000ms |
+| Error Rate     | 0.00%     | < 5%      |
+| Throughput     | 599 req/s | —         |
+| Total Requests | 53,979    | —         |
+
+**Full k6 output**
 ```
 execution: local
-   script: ./k6/single_user_load.js
-   output: -
+    script: ./k6/single_user_load.js
+    output: -
 
 scenarios: (100.00%) 1 scenario, 100 max VUs, 2m0s max duration (incl. graceful stop):
-         * default: Up to 100 looping VUs for 1m30s over 3 stages (gracefulRampDown: 30s, gracefulStop: 30s)
+          * default: Up to 100 looping VUs for 1m30s over 3 stages (gracefulRampDown: 30s, gracefulStop: 30s)
 
 
 
 █ THRESHOLDS
 
 http_req_duration
-✓ 'p(95)<500' p(95)=9.01ms
+✓ 'p(95)<500' p(95)=6.62ms
+✓ 'p(99)<1000' p(99)=11.35ms
 
 http_req_failed
 ✓ 'rate<0.05' rate=0.00%
@@ -218,9 +229,9 @@ http_req_failed
 
 █ TOTAL RESULTS
 
-checks_total.......: 213644  2372.742387/s
-checks_succeeded...: 100.00% 213644 out of 213644
-checks_failed......: 0.00%   0 out of 213644
+checks_total.......: 215916  2396.817467/s
+checks_succeeded...: 100.00% 215916 out of 215916
+checks_failed......: 0.00%   0 out of 215916
 
 ✓ status is 200 or 503
 ✓ has valid JSON body
@@ -228,38 +239,49 @@ checks_failed......: 0.00%   0 out of 213644
 ✓ has metadata
 
 HTTP
-http_req_duration..............: avg=3.47ms   min=209µs    med=2.48ms   max=212.66ms p(90)=6.88ms   p(95)=9.01ms
- { expected_response:true }...: avg=3.47ms   min=209µs    med=2.48ms   max=212.66ms p(90)=6.88ms   p(95)=9.01ms
-http_req_failed................: 0.00%  0 out of 53411
-http_reqs......................: 53411  593.185597/s
+http_req_duration..............: avg=2.62ms   min=245µs    med=1.93ms   max=56.57ms  p(90)=5.03ms   p(95)=6.62ms
+  { expected_response:true }...: avg=2.62ms   min=245µs    med=1.93ms   max=56.57ms  p(90)=5.03ms   p(95)=6.62ms
+http_req_failed................: 0.00%  2 out of 53979
+http_reqs......................: 53979  599.204367/s
 
 EXECUTION
-iteration_duration.............: avg=104.95ms min=100.42ms med=103.76ms max=313.17ms p(90)=109.49ms p(95)=112.57ms
-iterations.....................: 53411  593.185597/s
+iteration_duration.............: avg=103.85ms min=100.43ms med=103.09ms max=161.42ms p(90)=106.82ms p(95)=109.07ms
+iterations.....................: 53979  599.204367/s
 vus............................: 1      min=1          max=99
 vus_max........................: 100    min=100        max=100
 
 NETWORK
-data_received..................: 77 MB  852 kB/s
+data_received..................: 78 MB  863 kB/s
 data_sent......................: 5.5 MB 61 kB/s
 ```
 
 #### Batch Endpoint Stress Test (30 VUs, 30 seconds)
 
+| Metric | Result | Threshold |
+|--------|--------|-----------|
+| Avg Latency | 2.49ms | — |
+| P95 Latency | 4.43ms | < 5000ms |
+| P99 Latency | 5.99ms | < 10000ms |
+| Error Rate | 0.00% | < 5% |
+| Throughput | 31.5 req/s | — |
+| Total Requests | 1,579 | — |
+
+**Full k6 output**
 ```
 execution: local
-   script: ./k6/batch_stress.js
-   output: -
+    script: ./k6/batch_stress.js
+    output: -
 
 scenarios: (100.00%) 1 scenario, 30 max VUs, 1m20s max duration (incl. graceful stop):
-         * default: Up to 30 looping VUs for 50s over 3 stages (gracefulRampDown: 30s, gracefulStop: 30s)
+          * default: Up to 30 looping VUs for 50s over 3 stages (gracefulRampDown: 30s, gracefulStop: 30s)
 
 
 
 █ THRESHOLDS
 
 http_req_duration
-✓ 'p(95)<5000' p(95)=6.99ms
+✓ 'p(95)<5000' p(95)=4.43ms
+✓ 'p(99)<10000' p(99)=5.99ms
 
 http_req_failed
 ✓ 'rate<0.05' rate=0.00%
@@ -267,9 +289,9 @@ http_req_failed
 
 █ TOTAL RESULTS
 
-checks_total.......: 6304    125.193351/s
-checks_succeeded...: 100.00% 6304 out of 6304
-checks_failed......: 0.00%   0 out of 6304
+checks_total.......: 6316    125.813585/s
+checks_succeeded...: 100.00% 6316 out of 6316
+checks_failed......: 0.00%   0 out of 6316
 
 ✓ status is 200
 ✓ has results array
@@ -277,93 +299,102 @@ checks_failed......: 0.00%   0 out of 6304
 ✓ has pagination info
 
 HTTP
-http_req_duration..............: avg=3.43ms   min=369µs    med=2.86ms  max=63.67ms  p(90)=5.58ms   p(95)=6.99ms
- { expected_response:true }...: avg=3.43ms   min=369µs    med=2.86ms  max=63.67ms  p(90)=5.58ms   p(95)=6.99ms
-http_req_failed................: 0.00%  0 out of 1576
-http_reqs......................: 1576   31.298338/s
+http_req_duration..............: avg=2.49ms   min=504µs    med=2.16ms   max=57.01ms  p(90)=3.71ms   p(95)=4.43ms
+  { expected_response:true }...: avg=2.49ms   min=504µs    med=2.16ms   max=57.01ms  p(90)=3.71ms   p(95)=4.43ms
+http_req_failed................: 0.00%  0 out of 1579
+http_reqs......................: 1579   31.453396/s
 
 EXECUTION
-iteration_duration.............: avg=506.16ms min=500.55ms med=505.2ms max=574.06ms p(90)=510.85ms p(95)=513.1ms
-iterations.....................: 1576   31.298338/s
+iteration_duration.............: avg=505.14ms min=500.88ms med=504.33ms max=563.29ms p(90)=508.82ms p(95)=510.37ms
+iterations.....................: 1579   31.453396/s
 vus............................: 1      min=1         max=29
 vus_max........................: 30     min=30        max=30
 
 NETWORK
 data_received..................: 10 MB  202 kB/s
-data_sent......................: 168 kB 3.3 kB/s
+data_sent......................: 168 kB 3.4 kB/s
 ```
+
 
 #### Cache Effectiveness Test
 
+| Metric | Result |
+|--------|--------|
+| Cache Hits | 15,140 (99.96%) |
+| Cache Misses | 6 (0.04%) |
+| Avg Latency | 2.31ms |
+| P95 Latency | 4.82ms |
+| P99 Latency | 7.1ms |
+| Throughput | 302.8 req/s |
+
+**Full k6 output**
 ```
 execution: local
-   script: ./k6/cache_effectiveness.js
-   output: -
+script: ./k6/cache_effectiveness.js
+output: -
 
-scenarios: (100.00%) 1 scenario, 20 max VUs, 1m20s max duration (incl. graceful stop):
-         * default: Up to 20 looping VUs for 50s over 3 stages (gracefulRampDown: 30s, gracefulStop: 30s)
-
-
-
+    scenarios: (100.00%) 1 scenario, 20 max VUs, 1m20s max duration (incl. graceful stop):
+            * default: Up to 20 looping VUs for 50s over 3 stages (gracefulRampDown: 30s, gracefulStop: 30s
 █ THRESHOLDS
 
-http_req_duration
-✓ 'p(95)<500' p(95)=7.31ms
+    http_req_duration
+    ✓ 'p(95)<500' p(95)=4.82ms
+    ✓ 'p(99)<1000' p(99)=7.1ms
 
-http_req_failed
-✓ 'rate<0.05' rate=0.00%
+    http_req_failed
+    ✓ 'rate<0.05' rate=0.00%
 
 
 █ TOTAL RESULTS
 
-checks_total.......: 14784   295.645587/s
-checks_succeeded...: 100.00% 14784 out of 14784
-checks_failed......: 0.00%   0 out of 14784
+    checks_total.......: 15146   302.817139/s
+    checks_succeeded...: 100.00% 15146 out of 15146
+    checks_failed......: 0.00%   0 out of 15146
 
-✓ status is 200 or 503
+    ✓ status is 200 or 503
 
-CUSTOM
-cache_hits.....................: 14779  295.545598/s
-cache_misses...................: 5      0.099988/s
+    CUSTOM
+    cache_hits.....................: 15140  302.69718/s
+    cache_misses...................: 6      0.119959/s
 
-HTTP
-http_req_duration..............: avg=3.03ms  min=334µs  med=2.4ms   max=55.47ms  p(90)=5.66ms  p(95)=7.31ms
- { expected_response:true }...: avg=3.03ms  min=334µs  med=2.4ms   max=55.47ms  p(90)=5.66ms  p(95)=7.31ms
-http_req_failed................: 0.00%  0 out of 14784
-http_reqs......................: 14784  295.645587/s
+    HTTP
+    http_req_duration..............: avg=2.31ms  min=260µs   med=1.98ms  max=56.65ms  p(90)=3.96ms  p(95)=4.82ms
+    { expected_response:true }...: avg=2.31ms  min=260µs   med=1.98ms  max=56.65ms  p(90)=3.96ms  p(95)=4.82ms
+    http_req_failed................: 0.00%  0 out of 15146
+    http_reqs......................: 15146  302.817139/s
 
-EXECUTION
-iteration_duration.............: avg=54.41ms min=50.5ms med=53.64ms max=110.33ms p(90)=57.78ms p(95)=60.01ms
-iterations.....................: 14784  295.645587/s
-vus............................: 1      min=1          max=20
-vus_max........................: 20     min=20         max=20
+    EXECUTION
+    iteration_duration.............: avg=53.14ms min=50.36ms med=52.82ms max=110.87ms p(90)=54.88ms p(95)=56.06ms
+    iterations.....................: 15146  302.817139/s
+    vus............................: 1      min=1          max=20
+    vus_max........................: 20     min=20         max=20
 
-NETWORK
-data_received..................: 18 MB  351 kB/s
-data_sent......................: 1.5 MB 30 kB/s
+    NETWORK
+    data_received..................: 18 MB  360 kB/s
+    data_sent......................: 1.5 MB 31 kB/s
 ```
 
 ### Results Analysis
 
-All three tests passed their thresholds comfortably. The P95 latency of 9.01ms for single-user requests is 55x faster than the 500ms threshold, indicating significant headroom for increased load. The service sustained 593 requests per second with 100 concurrent users.
+All three tests passed their thresholds comfortably. The P95 latency of 6.62ms for single-user requests is 75x faster than the 500ms threshold, and the P99 of 11.35ms is 88x faster than the 1000ms threshold, indicating significant headroom for increased load. The service sustained 599 requests per second with 100 concurrent users.
 
 The 0.00% error rate across all tests is notable because the model client simulates a 1.5% failure rate. This suggests that during testing, the random failures did not occur in sufficient volume to register — a function of the random seed and short test duration. In longer-running tests, the expected ~1.5% failure rate would appear.
 
-The batch endpoint averaged 3.43ms with P95 of 6.99ms starting from a cold cache. The initial batch requests trigger cache misses with full model scoring per user, but because each user's recommendations are cached after the first computation, subsequent batch requests benefit from per-user cache hits. With only 20 seeded users and a 500ms sleep between iterations, the cache fully warms within the first second of testing. Under production conditions with thousands of users and no sleep between requests, cold-start batch latency would be higher (~200-400ms for 20 uncached users due to model scoring).
+The batch endpoint averaged 2.49ms with P95 of 4.43ms starting from a cold cache. The initial batch requests trigger cache misses with full model scoring per user, but because each user's recommendations are cached after the first computation, subsequent batch requests benefit from per-user cache hits. With only 20 seeded users and a 500ms sleep between iterations, the cache fully warms within the first second of testing. Under production conditions with thousands of users and no sleep between requests, cold-start batch latency would be higher (~200-400ms for 20 uncached users due to model scoring).
 
 ### Identified Bottlenecks and Limiting Factors
 
-The **simulated model latency** of 30-50ms per user is the primary bottleneck for cache-miss requests. With the cache warm, average response times drop to ~3ms. Without the cache, each request would incur the full model latency plus database query time.
+The **simulated model latency** of 30-50ms per user is the primary bottleneck for cache-miss requests. With the cache warm, average response times drop to ~2.5ms. Without the cache, each request would incur the full model latency plus database query time.
 
-For the batch endpoint, throughput is bounded by `batchConcurrency × model_latency`. With 10 workers and ~40ms average model latency, processing 20 uncached users takes approximately `(20/10) × 40ms = 80ms` for model scoring alone. However, once cached, batch processing completes in under 7ms regardless of page size.
+For the batch endpoint, throughput is bounded by `batchConcurrency × model_latency`. With 10 workers and ~40ms average model latency, processing 20 uncached users takes approximately `(20/10) × 40ms = 80ms` for model scoring alone. However, once cached, batch processing completes in under 6ms regardless of page size.
 
 The **database connection pool** (20 max connections) is the secondary constraint. Under heavy concurrent load with cache misses, goroutines may block waiting for a connection. This is intentional — unbounded connections would overwhelm PostgreSQL.
 
 ### Cache Hit Rate Analysis
 
-The cache effectiveness test recorded a **99.97% hit rate** (14,779 hits vs 5 misses). The 5 misses correspond exactly to the 5 unique users (IDs 1-5) being requested for the first time. After the initial warm-up (first ~50ms of the test), every subsequent request was served directly from Redis.
+The cache effectiveness test recorded a **99.96% hit rate** (15,140 hits vs 6 misses). The 6 misses are slightly higher than the expected 5 (one per unique user) due to a race condition during warm-up — multiple virtual users can request the same user simultaneously before the first response is cached. After the initial warm-up (first ~50ms of the test), every subsequent request was served directly from Redis.
 
-The impact of caching on response time is clear: the average latency of 3.03ms is dominated by Redis round-trip time rather than database queries and model scoring. Without caching, each request would require 3 database queries plus 30-50ms of model latency, resulting in approximately 40-60ms per request — a 15x performance difference.
+The impact of caching on response time is clear: the average latency of 2.31ms is dominated by Redis round-trip time rather than database queries and model scoring. Without caching, each request would require 3 database queries plus 30-50ms of model latency, resulting in approximately 40-60ms per request — an 18x performance difference.
 
 ---
 

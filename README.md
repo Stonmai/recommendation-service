@@ -150,23 +150,24 @@ For the batch endpoint, per-user errors are captured by the service's `categoriz
 
 ### Database Indexing Strategy
 
-##### Utilized Indexes
+**##### Utilized Indexes**
 | Index | Purpose |
 |-------|---------|
 | `idx_content_popularity` (DESC) | Optimizes the `ORDER BY popularity_score DESC LIMIT N` query used to fetch top candidates |
 | `idx_watch_history_user` | Speeds up the JOIN when fetching a specific user's watch history |
 | `idx_watch_history_content` | Supports the LEFT JOIN used in unwatched content filtering |
 | `idx_watch_history_composite` (user_id, watched_at DESC) | Covers the common query pattern of fetching recent watch history ordered by time |
+| `idx_watch_history_user_content` (user_id, content_id) | Optimizes the LEFT JOIN in the unwatched-content query by covering both join conditions in a single index lookup |
 
 The composite index on `(user_id, watched_at DESC)` is particularly important because it allows PostgreSQL to satisfy both the `WHERE user_id = ?` filter and the `ORDER BY watched_at DESC` sort using a single index scan, avoiding a separate sort step.
+The composite index on `(user_id, content_id)` allows PostgreSQL to evaluate the LEFT JOIN condition for unwatched content filtering without scanning the entire `user_watch_history` table, which is critical as watch history grows.
 
+**##### Preparatory Indexes**
 | Index | Purpose |
 |-------|---------|
 | `idx_users_country` | Supports potential country filtering of users (currently unused) |
 | `idx_users_subscription` | Supports potential subscription-based content filtering (currently unused) |
 | `idx_content_genre` | Enables fast filtering when querying candidates by genre (currently unused) |
-
-For large-scale datasets, adding a composite index on (user_id, content_id) would allow PostgreSQL to satisfy the LEFT JOIN condition using a single index lookup, improving unwatched-content filtering performance.
 
 ### Scoring Algorithm Rationale and Weight Choices
 
